@@ -26,6 +26,11 @@ export class SLDPManager {
       return;
     }
 
+    this._transportConfig = {
+      transport: config.transport || "websocket",
+      webTransportFallback: config.webTransportFallback === true,
+      webTransportOptions: config.webTransportOptions,
+    };
     this._startOffset = config.startOffset || 0;
     this._useSyncMode = config.syncBuffer > 0;
     this._hasVideo = !config.audioOnly;
@@ -54,6 +59,7 @@ export class SLDPManager {
     this._sessionReady = false;
     this._context.setSourceUrl(url);
     this._sendRequest("start", {
+      ...this._transportConfig,
       url: url,
       protocols: ["sldp.softvelum.com"],
       syncMode: this._useSyncMode,

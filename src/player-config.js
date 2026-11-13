@@ -2,6 +2,9 @@ import { LoggersFactory } from "./shared/logger";
 
 const DEFAULTS = {
   streamUrl: null,
+  transport: "websocket",
+  webTransportFallback: false,
+  webTransportOptions: null,
   container: null,
   autoplay: false,
   width: null,
@@ -291,6 +294,10 @@ export function createConfig(overrides = {}) {
   const target = { ...DEFAULTS, ...filtered };
 
   validateRequired(target);
+  if (!["websocket", "webtransport"].includes(target.transport))
+    throw new Error("Invalid transport");
+  if (typeof target.webTransportFallback !== "boolean")
+    throw new Error("webTransportFallback must be boolean");
 
   LoggersFactory.setLevel(target.logLevel);
   LoggersFactory.toggleWorkletLogs(target.workletLogs);

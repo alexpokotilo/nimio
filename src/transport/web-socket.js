@@ -1,3 +1,4 @@
+import { WebTransportSocket } from "./webtransport-socket";
 import { createProtocolAgent } from "@/protocol-agent-factory";
 
 const CONN_CLOSE_CODES = {
@@ -43,6 +44,8 @@ let socket;
 let curSocketId = 0;
 
 function closeSocket() {
+  // A facade send may report a synchronous framing failure and clear socket.
+  if (!socket) return;
   console.debug(`Close connection for socket id ${socket.id}`);
   // open/message delivery is task-queued: a queued event of this socket may
   // still run after it was replaced and must not act for the new one
@@ -70,7 +73,10 @@ self.onmessage = (e) => {
 
     let ws;
     try {
-      ws = new WebSocket(e.data.url, e.data.protocols);
+      ws =
+        e.data.transport === "webtransport"
+          ? new WebTransportSocket(e.data.url, e.data.protocols, e.data)
+          : new WebSocket(e.data.url, e.data.protocols);
     } catch (err) {
       // a malformed URL: report it like a dropped connection, so the
       // adapter learns the socket's fate and the engine does not stay in
