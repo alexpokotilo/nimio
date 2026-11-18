@@ -50,6 +50,7 @@ const player = new Nimio({
   webTransportFallback: false,
   webTransportOptions: {
     connectionTimeout: 10000,
+    // serverCertificateHashPath: "/certificate.sha256",
     // Optional browser WebTransport certificate pins:
     // serverCertificateHashes: [{ algorithm: "sha-256", value: certificateHash }],
   },
@@ -72,12 +73,23 @@ WebTransport requires a supporting browser in a secure context and an SLDP
 WebTransport endpoint reachable over HTTP/3. A WebSocket-only server is not
 sufficient.
 
-`webTransportOptions.connectionTimeout` covers both session readiness and
+`webTransportOptions.connectionTimeout` covers fingerprint lookup, session readiness and
 bidirectional stream creation, in milliseconds. It defaults to 10000 and finite
 values are clamped to 1000–30000; nonfinite values use the default.
 `serverCertificateHashes` is optional and passed to the browser WebTransport
-constructor unchanged; omit it for normal certificate validation. Certificate
-pin support and certificate requirements are enforced by the browser.
+constructor unchanged. It takes precedence over `serverCertificateHashPath`,
+including when the array is empty. Omit both options for normal browser
+certificate validation.
+
+Set `serverCertificateHashPath` to a root-relative path such as
+`"/certificate.sha256"` to fetch a fresh fingerprint for each connection.
+The path uses the stream server's host and port. Localhost and loopback IPs
+use HTTP, so `wss://localhost:8443/live/stream` fetches
+`http://localhost:8443/certificate.sha256`. Other hosts use HTTPS.
+The endpoint must return HTTP 200 with the leaf certificate's SHA-256
+fingerprint as 64 hexadecimal digits and allow cross-origin reads when the
+player is served from another origin. Lookup errors follow the configured
+WebSocket fallback behavior.
 
 Each session creates exactly one client-initiated bidirectional stream after
 WebTransport becomes ready. The stream carries RFC6455 frames directly, with

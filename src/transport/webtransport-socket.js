@@ -4,6 +4,48 @@ import {
   encodeMasked,
 } from "./webtransport-codec.js";
 
+async function fetchCertificateHashes(streamUrl, path, signal) {
+  if (
+    typeof path !== "string" ||
+    !path.startsWith("/") ||
+    path.startsWith("//") ||
+    path.includes("\\")
+  )
+    throw new Error("serverCertificateHashPath must be a root-relative path");
+
+  const endpoint = new URL(path, streamUrl);
+  if (endpoint.origin !== streamUrl.origin)
+    throw new Error("Certificate fingerprint must come from the stream server");
+
+  const host = endpoint.hostname;
+  if (
+    host === "localhost" ||
+    host === "[::1]" ||
+    /^127\.\d+\.\d+\.\d+$/.test(host)
+  ) {
+    endpoint.protocol = "http:";
+    endpoint.port = streamUrl.port || "443";
+  }
+
+  const response = await fetch(endpoint.href, {
+    signal,
+    cache: "no-store",
+    credentials: "omit",
+    redirect: "error",
+  });
+  if (response.status !== 200)
+    throw new Error(
+      `Certificate fingerprint request returned ${response.status}`,
+    );
+
+  const hex = (await response.text()).trim();
+  if (!/^[0-9a-f]{64}$/i.test(hex))
+    throw new Error("Expected a hexadecimal SHA-256 certificate fingerprint");
+
+  const value = Uint8Array.from(hex.match(/../g), (pair) => parseInt(pair, 16));
+  return [{ algorithm: "sha-256", value }];
+}
+
 // A WebSocket-shaped endpoint, so the existing worker owns protocol/session state.
 export class WebTransportSocket {
   constructor(url, protocols, config = {}) {
@@ -32,11 +74,24 @@ export class WebTransportSocket {
       if (url.protocol !== "wss:")
         throw new Error("WebTransport requires a wss streamUrl");
       url.protocol = "https:";
+      let hashes = options.serverCertificateHashes;
+      if (
+        hashes === undefined &&
+        options.serverCertificateHashPath !== undefined
+      ) {
+        const controller = new AbortController();
+        this.fingerprintRequest = controller;
+        hashes = await fetchCertificateHashes(
+          url,
+          options.serverCertificateHashPath,
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
+        this.fingerprintRequest = undefined;
+      }
       const wt = (this.transport = new WebTransport(
         url.href,
-        options.serverCertificateHashes === undefined
-          ? {}
-          : { serverCertificateHashes: options.serverCertificateHashes },
+        hashes === undefined ? {} : { serverCertificateHashes: hashes },
       ));
       wt.closed
         .then(
@@ -150,6 +205,8 @@ export class WebTransportSocket {
 
   cleanup() {
     clearTimeout(this.timer);
+    this.fingerprintRequest?.abort();
+    this.fingerprintRequest = undefined;
     const wt = this.transport;
     this.transport = undefined;
     if (wt) {
